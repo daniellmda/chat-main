@@ -25,6 +25,8 @@ class ChatServer {
         this.messageHistory = [];
         this.configureRoutes();
         this.handleConnections();
+        this.chatRooms = {};  // Pentru a stoca camerele de chat și mesajele lor
+
         
     }
 
@@ -36,21 +38,26 @@ class ChatServer {
         this.io.on('connection', (socket) => {
             console.log(`User connected: ${socket.id}`);
             
-            // Trimite istoricul mesajelor
-            socket.emit('messageHistory', this.messageHistory);
+            socket.on('joinRoom', (roomName) => {
+                socket.join(roomName); // Adaugă utilizatorul într-o cameră de chat
+                console.log(`${socket.id} joined room: ${roomName}`);
+                if (!this.chatRooms[roomName]) {
+                    this.chatRooms[roomName] = []; // Crează camera dacă nu există
+                }
+                socket.emit('messageHistory', this.chatRooms[roomName]);
+            });
 
             socket.on('sendMessage', (data) => {
                 console.log('Received message:', data);
                 const message = new Message(data.user, data.text, data.time);
-                this.messageHistory.push(message);
-                this.io.emit('receiveMessage', message);
+                this.chatRooms[data.room].push(message);  // Adaugă mesajul în camera corectă
+                this.io.to(data.room).emit('receiveMessage', message); // Trimite doar utilizatorilor din cameră
             });
 
             socket.on('sendFile', (fileMessage) => {
                 console.log('Received file:', fileMessage.fileData.name);
-                this.messageHistory.push(fileMessage);
-                // Transmite către toți ceilalți clienți
-                this.io.emit('receiveFile', fileMessage); // Emiterea directă pentru toți clienții
+                this.chatRooms[fileMessage.room].push(fileMessage); // Salvează fișierul în camera respectivă
+                this.io.to(fileMessage.room).emit('receiveFile', fileMessage); // Trimite fișierul doar celor din cameră
             });
             
 

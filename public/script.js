@@ -14,13 +14,16 @@ class ChatClient {
         this.messagesDiv = document.getElementById('messages');
         this.messageInput = document.getElementById('messageInput');
         this.fileInput = document.getElementById('fileInput');
+        this.roomName = 'default';  // Camera de chat implicită
         this.initSocketEvents();
+        this.setupRoomSelect();
     }
+
 
     initSocketEvents() {
         this.socket.on('connect', () => {
             console.log('Connected to server');
-            this.socket.emit('getMessageHistory');
+            this.socket.emit('joinRoom', this.roomName);  // Alătură utilizatorul camerei implicite
         });
 
         this.socket.on('messageHistory', (history) => {
@@ -42,11 +45,19 @@ class ChatClient {
 
         this.socket.on('receiveFile', (fileMessage) => {
             console.log('Received file message:', fileMessage);
-            if (!this.isDuplicateFile(fileMessage)) {
-                this.displayFile(fileMessage);
-            }
+            this.displayFile(fileMessage);
         });
     }
+    setupRoomSelect() {
+        const roomSelect = document.getElementById('roomSelect');
+        roomSelect.addEventListener('change', (e) => {
+            this.roomName = e.target.value;
+            this.socket.emit('joinRoom', this.roomName);
+            this.messagesDiv.innerHTML = ''; // Resetează mesajele când schimbi camera
+            this.socket.emit('getMessageHistory', this.roomName);
+        });
+    }
+
 
     isDuplicateFile(fileMessage) {
         // Verifică dacă acest fișier există deja în ultimele mesaje
@@ -65,9 +76,9 @@ class ChatClient {
     sendMessage() {
         const text = this.messageInput.value.trim();
         if (text) {
-            const message = new Message('Eu', text, new Date().toLocaleTimeString());
+            const message = new Message('Eu', text, new Date().toLocaleTimeString(), 'text');
             console.log('Sending message:', message);
-            this.socket.emit('sendMessage', message);
+            this.socket.emit('sendMessage', { room: this.roomName, ...message });
             this.messageInput.value = '';
         }
     }
@@ -103,15 +114,15 @@ class ChatClient {
                 );
 
                 console.log('Sending file message:', fileMessage);
-                this.socket.emit('sendFile', fileMessage);
+                this.socket.emit('sendFile', { room: this.roomName, ...fileMessage });
                 this.fileInput.value = '';
             };
             reader.readAsDataURL(file);
         }
     }
 
-    displayFile(message) {
-        console.log('Displaying file message:', message); // Verifică mesajul primit
+   displayFile(message) {
+        console.log('Displaying file message:', message);
         const fileElement = document.createElement('div');
         fileElement.classList.add('file-message');
         
@@ -132,10 +143,11 @@ class ChatClient {
         this.messagesDiv.appendChild(document.createElement('br'));
         this.scrollToBottom();
     }
-    
+
     scrollToBottom() {
         this.messagesDiv.scrollTop = this.messagesDiv.scrollHeight;
     }
+
 
     formatFileSize(bytes) {
         if (bytes < 1024) return `${bytes} B`;
@@ -148,7 +160,7 @@ const client = new ChatClient();
 
 document.getElementById('sendButton').addEventListener('click', () => client.sendMessage());
 document.getElementById('fileButton').addEventListener('click', () => client.sendFile());
-document.getElementById('messageInput').addEventListener('keypress', (e) => {
+document.getElementById('sendButton').addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
         client.sendMessage();
     }
