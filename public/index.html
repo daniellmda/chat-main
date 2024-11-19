@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+    <meta charset="UTF-8">
+    <title>Chat Room</title>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        #messages { max-height: 300px; overflow-y: scroll; border: 1px solid #ddd; padding: 10px; margin-bottom: 10px; }
+        .message { margin-bottom: 10px; }
+        .own-message { color: blue; }
+    </style>
+</head>
+<body>
+    <h1>Chat Room</h1>
+    <div id="messages"></div>
+    <input type="text" id="messageInput" placeholder="Scrie un mesaj..." />
+    <button onclick="client.sendMessage()">Trimite</button>
+    <br>
+    <input type="file" id="fileInput" />
+    <button id="fileButton" onclick="client.sendFile()">Trimite fișier</button>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
