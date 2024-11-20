@@ -5,7 +5,7 @@ class Message {
         this.time = time;
         this.type = type;
         this.fileData = fileData;
-        this.id = `${time}-${Math.random().toString(36).substr(2, 9)}`; // Adăugăm un ID unic
+        this.id = `${time}-${Math.random().toString(36).substr(2, 9)}`;
     }
 }
 
@@ -15,10 +15,32 @@ class ChatClient {
         this.messagesDiv = document.getElementById('messages');
         this.messageInput = document.getElementById('messageInput');
         this.fileInput = document.getElementById('fileInput');
+        this.usersCountDiv = document.getElementById('usersCount');
         this.roomName = 'default';
-        this.processedFiles = new Set(); // Pentru a urmări fișierele procesate
+        this.processedFiles = new Set();
+        this.username = this.generateDefaultUsername();
         this.initSocketEvents();
         this.setupRoomSelect();
+        this.setupChangeNameButton();
+    }
+
+    generateDefaultUsername() {
+        return 'User' + Math.floor(Math.random() * 1000);
+    }
+
+    setupChangeNameButton() {
+        document.getElementById('changeNameButton').addEventListener('click', () => {
+            const newName = prompt('Introdu noul nume:', this.username);
+            if (newName && newName.trim()) {
+                this.username = newName.trim();
+                // Anunță serverul despre schimbarea numelui
+                this.socket.emit('updateUsername', {
+                    oldName: this.username,
+                    newName: newName,
+                    room: this.roomName
+                });
+            }
+        });
     }
 
     initSocketEvents() {
@@ -27,10 +49,14 @@ class ChatClient {
             this.socket.emit('joinRoom', this.roomName);
         });
 
+        this.socket.on('updateUserCount', (count) => {
+            this.usersCountDiv.textContent = `Utilizatori online: ${count}`;
+        });
+
         this.socket.on('messageHistory', (history) => {
             console.log('Received message history:', history);
             this.messagesDiv.innerHTML = '';
-            this.processedFiles.clear(); // Resetăm lista de fișiere procesate
+            this.processedFiles.clear();
             history.forEach(msg => {
                 if (msg.type === 'file') {
                     this.displayFile(msg);
@@ -50,11 +76,20 @@ class ChatClient {
             if (!this.isFileProcessed(fileMessage)) {
                 this.displayFile(fileMessage);
                 this.markFileAsProcessed(fileMessage);
-            } else {
-                console.log('File already processed, skipping:', fileMessage.fileData.name);
             }
         });
     }
+
+    setupRoomSelect() {
+        const roomSelect = document.getElementById('roomSelect');
+        roomSelect.addEventListener('change', (e) => {
+            this.roomName = e.target.value;
+            this.socket.emit('joinRoom', this.roomName);
+            this.messagesDiv.innerHTML = '';
+            this.processedFiles.clear();
+        });
+    }
+
 
     isFileProcessed(fileMessage) {
         const fileId = this.getFileId(fileMessage);
@@ -84,7 +119,7 @@ class ChatClient {
     sendMessage() {
         const text = this.messageInput.value.trim();
         if (text) {
-            const message = new Message('Eu', text, new Date().toLocaleTimeString(), 'text');
+            const message = new Message(this.username, text, new Date().toLocaleTimeString(), 'text');
             this.socket.emit('sendMessage', { room: this.roomName, ...message });
             this.messageInput.value = '';
         }
@@ -93,7 +128,6 @@ class ChatClient {
     sendFile() {
         const file = this.fileInput.files[0];
         if (file) {
-            // Verificăm dacă un fișier este în curs de trimitere
             if (this.isSending) {
                 console.log('File upload in progress, please wait...');
                 return;
@@ -113,7 +147,7 @@ class ChatClient {
                 };
 
                 const fileMessage = new Message(
-                    'Eu',
+                    this.username,
                     `Sent file: ${file.name}`,
                     fileData.time,
                     'file',
@@ -137,6 +171,7 @@ class ChatClient {
     displayMessage(message) {
         const messageElement = document.createElement('div');
         messageElement.classList.add('message');
+    
         messageElement.setAttribute('data-message-id', message.id);
         messageElement.innerHTML = `<strong>${message.user}</strong> [${message.time}]: ${message.text}`;
         this.messagesDiv.appendChild(messageElement);
@@ -151,6 +186,9 @@ class ChatClient {
         console.log('Displaying file message:', message);
         const fileElement = document.createElement('div');
         fileElement.classList.add('file-message');
+        if (message.user === this.username) {
+            fileElement.classList.add('own-message');
+        }
         fileElement.setAttribute('data-file-id', this.getFileId(message));
         
         const fileData = message.fileData;

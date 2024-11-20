@@ -7,7 +7,6 @@
         body { font-family: Arial, sans-serif; }
         #messages { max-height: 300px; overflow-y: scroll; border: 1px solid #ddd; padding: 10px; margin-bottom: 10px; }
         .message { margin-bottom: 10px; }
-        .own-message { color: blue; }
     </style>
 </head>
 <body>
@@ -23,6 +22,9 @@
         <option value="room1">Room 1</option>
         <option value="room2">Room 2</option>
     </select>
+    <button id="changeNameButton">Schimbă numele</button>
+    <div id="usersCount">Utilizatori online: 0</div>
+
 
     <script src="/socket.io/socket.io.js"></script>
     <script src="script.js"></script>
