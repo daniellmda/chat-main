@@ -5,6 +5,7 @@ class Message {
         this.time = time;
         this.type = type;
         this.fileData = fileData;
+        this.id = `${time}-${Math.random().toString(36).substr(2, 9)}`; // Adăugăm un ID unic
     }
 }
 
@@ -14,21 +15,22 @@ class ChatClient {
         this.messagesDiv = document.getElementById('messages');
         this.messageInput = document.getElementById('messageInput');
         this.fileInput = document.getElementById('fileInput');
-        this.roomName = 'default';  // Camera de chat implicită
+        this.roomName = 'default';
+        this.processedFiles = new Set(); // Pentru a urmări fișierele procesate
         this.initSocketEvents();
         this.setupRoomSelect();
     }
 
-
     initSocketEvents() {
         this.socket.on('connect', () => {
             console.log('Connected to server');
-            this.socket.emit('joinRoom', this.roomName);  // Alătură utilizatorul camerei implicite
+            this.socket.emit('joinRoom', this.roomName);
         });
 
         this.socket.on('messageHistory', (history) => {
             console.log('Received message history:', history);
             this.messagesDiv.innerHTML = '';
+            this.processedFiles.clear(); // Resetăm lista de fișiere procesate
             history.forEach(msg => {
                 if (msg.type === 'file') {
                     this.displayFile(msg);
@@ -45,56 +47,61 @@ class ChatClient {
 
         this.socket.on('receiveFile', (fileMessage) => {
             console.log('Received file message:', fileMessage);
-            this.displayFile(fileMessage);
+            if (!this.isFileProcessed(fileMessage)) {
+                this.displayFile(fileMessage);
+                this.markFileAsProcessed(fileMessage);
+            } else {
+                console.log('File already processed, skipping:', fileMessage.fileData.name);
+            }
         });
     }
+
+    isFileProcessed(fileMessage) {
+        const fileId = this.getFileId(fileMessage);
+        return this.processedFiles.has(fileId);
+    }
+
+    markFileAsProcessed(fileMessage) {
+        const fileId = this.getFileId(fileMessage);
+        this.processedFiles.add(fileId);
+    }
+
+    getFileId(fileMessage) {
+        return `${fileMessage.time}-${fileMessage.fileData.name}-${fileMessage.fileData.size}`;
+    }
+
     setupRoomSelect() {
         const roomSelect = document.getElementById('roomSelect');
         roomSelect.addEventListener('change', (e) => {
             this.roomName = e.target.value;
             this.socket.emit('joinRoom', this.roomName);
-            this.messagesDiv.innerHTML = ''; // Resetează mesajele când schimbi camera
+            this.messagesDiv.innerHTML = '';
+            this.processedFiles.clear();
             this.socket.emit('getMessageHistory', this.roomName);
         });
-    }
-
-
-    isDuplicateFile(fileMessage) {
-        // Verifică dacă acest fișier există deja în ultimele mesaje
-        const messages = this.messagesDiv.getElementsByClassName('file-message');
-        for (let msg of messages) {
-            const filename = msg.querySelector('a').textContent;
-            const timestamp = msg.querySelector('span').textContent;
-            if (filename.includes(fileMessage.fileData.name) && 
-                timestamp.includes(fileMessage.time)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     sendMessage() {
         const text = this.messageInput.value.trim();
         if (text) {
             const message = new Message('Eu', text, new Date().toLocaleTimeString(), 'text');
-            console.log('Sending message:', message);
             this.socket.emit('sendMessage', { room: this.roomName, ...message });
             this.messageInput.value = '';
         }
     }
 
-    displayMessage(message) {
-        const messageElement = document.createElement('div');
-        messageElement.classList.add('message');
-        messageElement.innerHTML = `<strong>${message.user}</strong> [${message.time}]: ${message.text}`;
-        this.messagesDiv.appendChild(messageElement);
-        this.scrollToBottom();
-    }
-
     sendFile() {
         const file = this.fileInput.files[0];
         if (file) {
+            // Verificăm dacă un fișier este în curs de trimitere
+            if (this.isSending) {
+                console.log('File upload in progress, please wait...');
+                return;
+            }
+
+            this.isSending = true;
             console.log('Processing file:', file.name);
+            
             const reader = new FileReader();
             reader.onload = (e) => {
                 const fileData = {
@@ -113,18 +120,38 @@ class ChatClient {
                     fileData
                 );
 
-                console.log('Sending file message:', fileMessage);
                 this.socket.emit('sendFile', { room: this.roomName, ...fileMessage });
                 this.fileInput.value = '';
+                this.isSending = false;
             };
+
+            reader.onerror = (error) => {
+                console.error('Error reading file:', error);
+                this.isSending = false;
+            };
+
             reader.readAsDataURL(file);
         }
     }
 
-   displayFile(message) {
+    displayMessage(message) {
+        const messageElement = document.createElement('div');
+        messageElement.classList.add('message');
+        messageElement.setAttribute('data-message-id', message.id);
+        messageElement.innerHTML = `<strong>${message.user}</strong> [${message.time}]: ${message.text}`;
+        this.messagesDiv.appendChild(messageElement);
+        this.scrollToBottom();
+    }
+
+    displayFile(message) {
+        if (this.isFileProcessed(message)) {
+            return;
+        }
+
         console.log('Displaying file message:', message);
         const fileElement = document.createElement('div');
         fileElement.classList.add('file-message');
+        fileElement.setAttribute('data-file-id', this.getFileId(message));
         
         const fileData = message.fileData;
         const fileLink = document.createElement('a');
@@ -140,14 +167,12 @@ class ChatClient {
         fileElement.appendChild(fileInfo);
         
         this.messagesDiv.appendChild(fileElement);
-        this.messagesDiv.appendChild(document.createElement('br'));
         this.scrollToBottom();
     }
 
     scrollToBottom() {
         this.messagesDiv.scrollTop = this.messagesDiv.scrollHeight;
     }
-
 
     formatFileSize(bytes) {
         if (bytes < 1024) return `${bytes} B`;
@@ -156,11 +181,12 @@ class ChatClient {
     }
 }
 
+// Inițializare
 const client = new ChatClient();
 
 document.getElementById('sendButton').addEventListener('click', () => client.sendMessage());
 document.getElementById('fileButton').addEventListener('click', () => client.sendFile());
-document.getElementById('sendButton').addEventListener('keypress', (e) => {
+document.getElementById('messageInput').addEventListener('keypress', (e) => {
     if (e.key === 'Enter') {
         client.sendMessage();
     }
